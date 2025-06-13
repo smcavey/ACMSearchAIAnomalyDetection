@@ -1,0 +1,16 @@
+containers:
+  - "search-api"
+  - "search-collector"
+  - "search-indexer"
+  - "search-postgres"
+prometheus_queries:
+  cpu: "sum(container_cpu_usage_seconds_total{container='search-collector'}) by (pod)"
+  memory: "sum(container_memory_working_set_bytes{container='search-collector'}) by (pod)"
+  filesystem: "sum(container_fs_usage_bytes{container='search-collector'}) by (pod)"
+services:
+  prometheus: "$PROMETHEUS_ROUTE_PATH"
+  service-api: "$SEARCH_API_METRICS_PATH"
+  service-collector: "$SEARCH_COLLECTOR_METRICS_PATH"
+  service-indexer: "$SEARCH_INDEXER_METRICS_PATH"
+token: "sha256~..."
+window_size: 5
