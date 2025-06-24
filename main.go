@@ -39,10 +39,6 @@ type authTransport struct {
 	Transport http.RoundTripper
 }
 
-var serviceRoutes map[string]string
-
-var prometheusQueries map[string]string
-
 // Periodically fetch and send metrics to anomaly detection service
 func main() {
 	cfg, err := loadConfig("config.yaml")
@@ -54,7 +50,7 @@ func main() {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client, err := api.NewClient(api.Config{
-		Address: cfg.Services["prometheus"],
+		Address: cfg.Services["prometheus"], // TODO: also utilize service specific metrics exposed by /metrics endpoints for more data
 		RoundTripper: &authTransport{
 			Token:     cfg.Token,
 			Transport: transport,
@@ -84,6 +80,7 @@ func main() {
 	}
 }
 
+// Sends window to anomaly detection service
 func sendToAnomalyDetectionService(window []MetricPayload) error {
 	body, err := json.Marshal(window)
 	if err != nil {
@@ -107,6 +104,7 @@ func sendToAnomalyDetectionService(window []MetricPayload) error {
 	return nil
 }
 
+// Collects metrics defined from services, containers, and metrics in config.yaml
 func collectMetrics(client api.Client, queries map[string]string, containers []string) MetricPayload {
 	v1api := v1.NewAPI(client)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -138,6 +136,7 @@ func collectMetrics(client api.Client, queries map[string]string, containers []s
 	return payload
 }
 
+// RoundTrip Add auth token to header
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", "Bearer "+t.Token)
 	return t.Transport.RoundTrip(req)

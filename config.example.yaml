@@ -16,3 +16,19 @@ scrape_interval: 30
 token: "sha256~..."
 window_size: 5
 z_score_threshold: 2.0
+services_context:
+  search-api:
+    description: "Handles user queries to fetch multi-cluster state. Reads from search-postgres."
+    depends_on:
+      - "search-postgres"
+  search-collector:
+    description: "Collects cluster state and forwards to search-indexer."
+    depends_on:
+      - "search-indexer"
+  search-indexer:
+    description: "Aggregates incoming cluster state from search-collector. Keeps search-postgres up to date with cluster state."
+    depends_on:
+      - "search-postgres"
+  search-postgres:
+    description: "Stores multi-cluster state."
+    depends_on: []

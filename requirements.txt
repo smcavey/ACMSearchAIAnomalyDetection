@@ -3,5 +3,4 @@ uvicorn~=0.34.3
 llama-index
 llama-index-llms-ollama
 pydantic~=2.11.6
-
 PyYAML~=6.0.2
