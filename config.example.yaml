@@ -12,5 +12,7 @@ services:
   service-api: "$SEARCH_API_METRICS_PATH"
   service-collector: "$SEARCH_COLLECTOR_METRICS_PATH"
   service-indexer: "$SEARCH_INDEXER_METRICS_PATH"
+scrape_interval: 30
 token: "sha256~..."
 window_size: 5
+z_score_threshold: 2.0
