@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime
 import uvicorn
+import requests
 import yaml
 import asyncio
 import statistics
@@ -16,14 +17,25 @@ def load_config(path="config.yaml"):
         return yaml.safe_load(f)
 
 
-config = load_config()
-Z_SCORE_THRESHOLD = config.get("z_score_threshold", 2.0)
-
-
 # ----------- Data models -----------
 class MetricSnapshot(BaseModel):
     timestamp: datetime
     metrics: Dict[str, Dict[str, float]]  # [service][metric] = value
+
+
+class ServiceMeta(BaseModel):
+    description: str
+    depends_on: List[str]
+
+
+class ServiceContext(BaseModel):
+    services: Dict[str, ServiceMeta]
+
+
+config = load_config()
+Z_SCORE_THRESHOLD = config.get("z_score_threshold", 2.0)
+svc_ctx = config.get("services_context", {})
+SERVICE_CONTEXT = ServiceContext(services=svc_ctx)
 
 
 # ----------- Z-Score calc ---------
@@ -81,7 +93,49 @@ async def analyze_metrics(payload: List[MetricSnapshot]):
             if anomaly_entries:
                 anomalies.setdefault(service, {})[metric] = anomaly_entries
 
+    if anomalies:
+        print(query_llm(anomalies))
+
     return {"anomalies": anomalies}
+
+
+def query_llm(anomalies: Dict[str, Dict[str, List[Dict]]]):
+    response = requests.post(
+        "http://localhost:11434/api/generate",
+        json={
+            "model": "llama3",
+            "prompt": build_root_cause_prompt(anomalies),
+            "stream": False
+        }
+    )
+
+    return response.json()["response"]
+
+
+def build_root_cause_prompt(anomalies: Dict[str, Dict[str, List[Dict]]]):
+    lines = ["You are an expert in distributed systems observability and root cause analysis.",
+             "Your task is to interpret anomalies based on service relationships and suggest possible causes.\n",
+             "=== Detected Anomalies ==="]
+
+    for service, metrics in anomalies.items():
+        for metric, entries in metrics.items():
+            for entry in entries:
+                lines.append(
+                    f"- Service: {entry['service']} | Metric: {entry['metric']} | "
+                    f"Value: {entry['value']} | Z-Score: {entry['z_score']} | "
+                    f"Timestamp: {entry['timestamp']}"
+                )
+
+    lines.append("\n=== Service Context ===")
+    for name, meta in SERVICE_CONTEXT.services.items():
+        dep_str = ", ".join(meta.depends_on) if meta.depends_on else "None"
+        lines.append(f"- {name}: {meta.description} (Depends on: {dep_str})")
+
+    lines.append("\nBased on the anomalies and service relationships, what is the most likely root cause?")
+    lines.append("Provide insight, possible cascading effects, and debugging suggestions.\n")
+    print("\n".join(lines))
+
+    return "\n".join(lines)
 
 
 # ----------- Main ----------------
