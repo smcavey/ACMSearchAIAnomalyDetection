@@ -8,9 +8,9 @@
 ->
 [convert to structured input: CSV, JSON]
 ->
-[LlamaStack + LlamaIndex]
+[LlamaStack + LlamaIndex] || [zscore]
 ->
-[LLM Response: anomalies? reason?]
+[LLM Response: anomalies? reason?] || [zscore response]
 
 # Metrics
 
