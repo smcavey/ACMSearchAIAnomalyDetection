@@ -166,6 +166,10 @@ By focusing on search-postgres and its relationships with other services, we can
 # Running
 ## LLM
 We run ollama locally with model llama3 for simplicity.
+```
+ollama pull llama3
+ollama run llama3
+```
 ## main.go
 Run main.go to scrape metrics and send to anomaly detection service.
 ## zscore.py
