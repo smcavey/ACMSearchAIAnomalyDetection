@@ -27,12 +27,9 @@ type Config struct {
 }
 
 type MetricPayload struct {
-	Service   string                        `json:"service"`
 	Timestamp time.Time                     `json:"timestamp"`
 	Metrics   map[string]map[string]float64 `json:"metrics"`
 }
-
-var metricsWindow []MetricPayload
 
 type authTransport struct {
 	Token     string
@@ -64,25 +61,17 @@ func main() {
 		select {
 		case <-ticker.C:
 			payload := collectMetrics(client, cfg.PrometheusQueries, cfg.Containers)
-			if len(metricsWindow) == cfg.WindowSize {
-				// remove oldest metrics from window
-				metricsWindow = metricsWindow[1:]
-			}
-			metricsWindow = append(metricsWindow, payload)
 
-			if len(metricsWindow) == cfg.WindowSize {
-				err := sendToAnomalyDetectionService(metricsWindow)
-				if err != nil {
-					log.Printf("Error sending to LLM service: %v", err)
-				}
+			if err = sendToAnomalyDetectionService(payload); err != nil {
+				log.Printf("Error sending to LLM service: %v", err)
 			}
 		}
 	}
 }
 
-// Sends window to anomaly detection service
-func sendToAnomalyDetectionService(window []MetricPayload) error {
-	body, err := json.Marshal(window)
+// Sends metric payload to anomaly detection service
+func sendToAnomalyDetectionService(payload MetricPayload) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}

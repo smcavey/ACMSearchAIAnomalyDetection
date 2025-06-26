@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime
+from collections import defaultdict, deque
 import uvicorn
 import requests
 import yaml
@@ -36,6 +37,10 @@ config = load_config()
 Z_SCORE_THRESHOLD = config.get("z_score_threshold", 2.0)
 svc_ctx = config.get("services_context", {})
 SERVICE_CONTEXT = ServiceContext(services=svc_ctx)
+# stores number of metrics to be used in calculation of std_dev to derive z_score
+Z_SCORE_WINDOW = 5
+# in mem history of metrics
+METRIC_HISTORY: Dict[str, Dict[str, deque]] = defaultdict(lambda: defaultdict(lambda: deque(maxlen=Z_SCORE_WINDOW)))
 
 
 # ----------- Z-Score calc ---------
@@ -47,54 +52,42 @@ def compute_z_scores(values: List[float]) -> list[float]:
 
 # ----------- Routes ---------------
 @app.post("/analyze")
-async def analyze_metrics(payload: List[MetricSnapshot]):
+async def analyze_metrics(payload: MetricSnapshot):
     # Track values and timestamps by [service][metric]
     values_by_metric: Dict[str, Dict[str, List[float]]] = {}
     timestamps_by_metric: Dict[str, Dict[str, List[datetime]]] = {}
 
-    for snapshot in payload:
-        for service, metrics in snapshot.metrics.items():
-            for metric, value in metrics.items():
-                values_by_metric.setdefault(service, {}).setdefault(metric, []).append(value)
-                timestamps_by_metric.setdefault(service, {}).setdefault(metric, []).append(snapshot.timestamp)
+    for service, metrics in payload.metrics.items():
+        for metric, value in metrics.items():
+            METRIC_HISTORY[service][metric].append((payload.timestamp, value))
+            # values_by_metric.setdefault(service, {}).setdefault(metric, []).append(value)
+            # timestamps_by_metric.setdefault(service, {}).setdefault(metric, []).append(payload.timestamp)
 
     anomalies = {}
 
-    for service, metrics in values_by_metric.items():
-        for metric, values in metrics.items():
-            print(values)
+    for service, metrics in METRIC_HISTORY.items():
+        for metric, history in metrics.items():
+            if len(history) < Z_SCORE_WINDOW:
+                continue
+
+            timestamps, values = zip(*history)
+            print(f"\n\nservice: {service}\nmetric: {metric}\ntimestamps: {timestamps}\nvalues: {values}\n\n")
             z_scores = compute_z_scores(values)
-            timestamps = timestamps_by_metric[service][metric]
-            anomaly_entries = []
+            i = len(z_scores) - 1
+            z = z_scores[i]  # most recent point in metric history
 
             # checks if latest data point is anomalous compared to rest of window
-            i = len(z_scores) - 1  # latest index
-            z = z_scores[i]
             if abs(z) > Z_SCORE_THRESHOLD:
-                anomaly_entries.append({
+                anomalies.setdefault(service, {})[metric] = [{
                     "service": service,
                     "metric": metric,
                     "timestamp": timestamps[i].isoformat(),
                     "value": values[i],
                     "z_score": round(z, 2)
-                })
-
-            # checks each data point in received window for anomalies
-            # for i, z in enumerate(z_scores):
-            #     if abs(z) > Z_SCORE_THRESHOLD:
-            #         anomaly_entries.append({
-            #             "service": service,
-            #             "metric": metric,
-            #             "timestamp": timestamps[i].isoformat(),
-            #             "value": values[i],
-            #             "z_score": round(z, 2)
-            #         })
-
-            if anomaly_entries:
-                anomalies.setdefault(service, {})[metric] = anomaly_entries
+                }]
 
     if anomalies:
-        print(query_llm(anomalies))
+        print(query_llm(anomalies)) # TODO: do something else besides just printing
 
     return {"anomalies": anomalies}
 
