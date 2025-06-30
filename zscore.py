@@ -54,14 +54,10 @@ def compute_z_scores(values: List[float]) -> list[float]:
 @app.post("/analyze")
 async def analyze_metrics(payload: MetricSnapshot):
     # Track values and timestamps by [service][metric]
-    values_by_metric: Dict[str, Dict[str, List[float]]] = {}
-    timestamps_by_metric: Dict[str, Dict[str, List[datetime]]] = {}
 
     for service, metrics in payload.metrics.items():
         for metric, value in metrics.items():
             METRIC_HISTORY[service][metric].append((payload.timestamp, value))
-            # values_by_metric.setdefault(service, {}).setdefault(metric, []).append(value)
-            # timestamps_by_metric.setdefault(service, {}).setdefault(metric, []).append(payload.timestamp)
 
     anomalies = {}
 
@@ -87,12 +83,12 @@ async def analyze_metrics(payload: MetricSnapshot):
                 }]
 
     if anomalies:
-        print(query_llm(anomalies)) # TODO: do something else besides just printing
+        print(query_llm(anomalies))  # TODO: do something else besides just printing
 
     return {"anomalies": anomalies}
 
 
-def query_llm(anomalies: Dict[str, Dict[str, List[Dict]]]):
+def query_llm(anomalies: Dict[str, Dict[str, List[Dict]]]) -> str:
     response = requests.post(
         "http://localhost:11434/api/generate",
         json={
@@ -105,7 +101,29 @@ def query_llm(anomalies: Dict[str, Dict[str, List[Dict]]]):
     return response.json()["response"]
 
 
-def build_root_cause_prompt(anomalies: Dict[str, Dict[str, List[Dict]]]):
+def calculate_trend(history: deque) -> Dict:
+    if len(history) < 2:
+        return {"trend": "insufficient data"}
+
+    _, values = zip(*history)
+    # [100, 105, 95, 97] -> [+5, -10, +2]
+    deltas = [b - a for a, b in zip(values, values[1:])]
+
+    # (+5 -10 +2) / 3 = -1 -> "decreasing"
+    avg_delta = sum(deltas) / len(deltas)
+    trend = (
+        "increasing" if avg_delta > 0 else
+        "decreasing" if avg_delta < 0 else
+        "flat"
+    )
+
+    return {
+        "trend": trend,
+        "avg_delta": round(avg_delta, 3)
+    }
+
+
+def build_root_cause_prompt(anomalies: Dict[str, Dict[str, List[Dict]]]) -> str:
     lines = ["You are an expert in distributed systems observability and root cause analysis.",
              "Your task is to interpret anomalies based on service relationships and suggest possible causes.\n",
              "=== Detected Anomalies ==="]
@@ -118,6 +136,15 @@ def build_root_cause_prompt(anomalies: Dict[str, Dict[str, List[Dict]]]):
                     f"Value: {entry['value']} | Z-Score: {entry['z_score']} | "
                     f"Timestamp: {entry['timestamp']}"
                 )
+
+    lines.append("\n=== Recent Trends ===")
+    for service, metrics in anomalies.items():
+        for metric in metrics.keys():
+            history = METRIC_HISTORY[service][metric]
+            trend = calculate_trend(history)
+            lines.append(
+                f"- Service: {service} | Metric: {metric} | Trend: {trend['trend']} | Avg Delta: {trend['avg_delta']}"
+            )
 
     lines.append("\n=== Service Context ===")
     for name, meta in SERVICE_CONTEXT.services.items():
