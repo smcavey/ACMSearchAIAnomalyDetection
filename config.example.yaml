@@ -15,6 +15,12 @@ services:
 scrape_interval: 30
 token: "sha256~..."
 z_score_threshold: 2.0
+seasonal:
+  enable: true
+  historical_days: 14  # Keep 2 weeks of historical data
+  short_term_window: 5  # Traditional z-score window
+  min_seasonal_points: 3  # Minimum points needed for seasonal baseline
+  adaptive_threshold_multiplier: 1.5  # Maximum multiplier for adaptive thresholds
 services_context:
   search-api:
     description: "Handles user queries to fetch multi-cluster state. Reads from search-postgres."
